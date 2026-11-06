@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Desglose de equipos previstos</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<style>
+    /* Desglose de los equipos previstos de ingreso (Reporte Ejecutivo de KPIs, seccion 7).
+       Sirve para cualquier cifra agrupada: total general, un laboratorio o un equipo.
+       Los datos viven aparte del reporte diario: <token>_previstos.json en Supabase.
+       NOTA: solo caracteres ASCII (entidades HTML para tildes), igual que index.html. */
+    :root {
+        --azul: #0f4bb4; --azul-claro: #eef4ff; --indigo: #4338ca;
+        --texto: #1e293b; --texto-sec: #64748b; --borde: #e2e8f0; --fondo: #f8fafc;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--fondo); color: var(--texto); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 16px; line-height: 1.5; -webkit-text-size-adjust: 100%; }
+    .contenedor { max-width: 900px; margin: 0 auto; padding: 16px; }
+    .cab { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
+    .cab .ic { width: 42px; height: 42px; flex: 0 0 42px; border-radius: 12px; background: var(--azul-claro); color: var(--indigo); display: flex; align-items: center; justify-content: center; font-size: 1.1rem; }
+    .cab h1 { margin: 0; font-size: 1.25rem; font-weight: 800; line-height: 1.25; }
+    .cab .sub { font-size: .8rem; color: var(--texto-sec); }
+    .barra { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+    .barra label { font-size: .75rem; color: var(--texto-sec); }
+    .barra select { flex: 1 1 260px; min-width: 0; font: inherit; font-size: .85rem; padding: 7px 10px; border: 1px solid var(--borde); border-radius: 8px; background: #fff; color: var(--texto); }
+    .btn { font: inherit; font-size: .8rem; padding: 7px 12px; border: 1px solid var(--borde); border-radius: 8px; background: #fff; color: var(--texto); cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
+    .btn:hover { border-color: var(--indigo); color: var(--indigo); }
+    .kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-bottom: 12px; }
+    .kpi { background: #fff; border: 1px solid var(--borde); border-radius: 10px; padding: 8px 12px; min-width: 0; }
+    .kpi .v { font-size: 1.35rem; font-weight: 800; color: var(--indigo); line-height: 1.2; }
+    .kpi .l { font-size: .7rem; color: var(--texto-sec); }
+    .aviso { background: var(--azul-claro); border: 1px solid #c7d7fe; color: #1e3a8a; border-radius: 10px; padding: 9px 12px; font-size: .82rem; margin-bottom: 12px; }
+    .tarjeta { background: #fff; border: 1px solid var(--borde); border-radius: 12px; overflow: hidden; }
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--borde); background: var(--fondo); }
+    .chips .et { font-size: .72rem; color: var(--texto-sec); margin-right: 2px; }
+    .chip { border: 1px solid var(--borde); background: #fff; color: var(--texto); border-radius: 999px; padding: 3px 10px; font: inherit; font-size: .76rem; cursor: pointer; }
+    .chip b { color: var(--indigo); }
+    .chip span { color: var(--texto-sec); font-size: .7rem; }
+    .chip:hover { border-color: var(--indigo); }
+    .chip.activo { background: var(--indigo); border-color: var(--indigo); color: #fff; }
+    .chip.activo b, .chip.activo span { color: #fff; }
+    .chip.nav i { font-size: .6rem; color: #94a3b8; margin-left: 2px; }
+    .tabla { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: .8rem; }
+    th { text-align: left; font-size: .66rem; text-transform: uppercase; letter-spacing: .4px; color: var(--texto-sec); padding: 9px 10px 6px; border-bottom: 1px solid var(--borde); white-space: nowrap; background: #fff; }
+    td { padding: 7px 10px; border-bottom: 1px solid var(--borde); white-space: nowrap; vertical-align: top; }
+    td.emp { white-space: normal; font-weight: 600; min-width: 170px; }
+    td.emp small { display: block; font-weight: 400; font-size: .7rem; color: var(--texto-sec); line-height: 1.35; margin-top: 1px; }
+    .n { text-align: right; font-variant-numeric: tabular-nums; }
+    tbody tr:hover { background: var(--azul-claro); }
+    tfoot td { font-weight: 800; border-bottom: 0; }
+    .estado { text-align: center; padding: 48px 16px; color: var(--texto-sec); }
+    .pie { text-align: center; font-size: .7rem; color: var(--texto-sec); margin-top: 14px; }
+    @media (max-width: 600px) {
+        .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .col-fecha { display: none; }
+        td.emp { min-width: 130px; }
+    }
+    @media print {
+        body { background: #fff; }
+        .barra, .no-imprimir { display: none !important; }
+        .chip:not(.activo) { display: none; }
+        .chips.nav-labs { display: none; }
+        .tarjeta, .kpi { border-color: #cbd5e1; }
+    }
+</style>
+</head>
+<body>
+<div class="contenedor" id="app"><div class="estado"><i class="fas fa-spinner fa-spin"></i> Cargando desglose&hellip;</div></div>
+<script>
+    const SUPABASE_URL = 'https://zrdlvykhircycpxqjlug.supabase.co';
+    const SUPABASE_URL_ANTERIOR = 'https://tbvkfbppzgsgacdyhqcn.supabase.co';
+    const SUPABASE_BUCKET = 'ReportesSeguimientoOperativo';
+    const SEP = '||';
+
+    let DATOS = null, vista = null, filtro = '';
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('token') || '';
+
+    function fmtN(n) { return (Number(n) || 0).toLocaleString('es-PE'); }
+    function esc(s) {
+        if (s === undefined || s === null) return '';
+        return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; });
+    }
+    function fecha(iso) { if (!iso) return '&mdash;'; const p = String(iso).slice(0, 10).split('-'); return p.length === 3 ? p[2] + '/' + p[1] + '/' + p[0] : esc(iso); }
+    function low(s) { return String(s || '').toLowerCase(); }
+    function estado(msg) { document.getElementById('app').innerHTML = '<div class="estado">' + msg + '</div>'; }
+
+    // Vista = que cifra se esta desglosando: un equipo de un laboratorio, un laboratorio entero o todo.
+    function armarVista(lab, equipo) {
+        const eqs = DATOS.equipos;
+        if (equipo) {
+            const e = eqs.find(function (x) { return low(x.lab) === low(lab) && low(x.nombre) === low(equipo); })
+                || (!lab && eqs.find(function (x) { return low(x.nombre) === low(equipo); }));
+            if (e) return { tipo: 'equipo', lab: e.lab, equipo: e.nombre, titulo: e.nombre, sub: esc(e.lab), equipos: [e] };
+        }
+        if (lab) {
+            const l = eqs.filter(function (x) { return low(x.lab) === low(lab); });
+            if (l.length) return { tipo: 'lab', lab: l[0].lab, equipo: '', titulo: l[0].lab, sub: 'Todos los equipos del laboratorio', equipos: l };
+        }
+        return { tipo: 'todos', lab: '', equipo: '', titulo: 'Todos los equipos previstos', sub: 'Todos los laboratorios', equipos: eqs };
+    }
+
+    function elegir(valor) {
+        const p = String(valor || '').split(SEP);
+        vista = armarVista(p[0] || '', p[1] || '');
+        filtro = '';
+        const u = new URL(window.location.href);
+        if (vista.lab) u.searchParams.set('lab', vista.lab); else u.searchParams.delete('lab');
+        if (vista.equipo) u.searchParams.set('equipo', vista.equipo); else u.searchParams.delete('equipo');
+        history.replaceState(null, '', u.toString());
+        pintar();
+        window.scrollTo(0, 0);
+    }
+    function porEjecutivo(j) { filtro = filtro === j ? '' : j; pintar(); }
+
+    // Junta el detalle de todos los equipos de la vista por proforma / empresa / ejecutivo.
+    function filasDe(v) {
+        const m = {};
+        v.equipos.forEach(function (eq) {
+            (eq.detalle || []).forEach(function (d) {
+                const k = [d.p, d.e, d.j, d.f].join(SEP);
+                const f = m[k] || (m[k] = { p: d.p, e: d.e, j: d.j, f: d.f, c: 0, eqs: {} });
+                f.c += d.c;
+                const nom = v.tipo === 'todos' ? eq.nombre + ' (' + eq.lab.replace(/^Laboratorio de /i, '') + ')' : eq.nombre;
+                f.eqs[nom] = (f.eqs[nom] || 0) + d.c;
+            });
+        });
+        return Object.keys(m).map(function (k) { return m[k]; })
+            .sort(function (a, b) { return b.c - a.c || String(a.e).localeCompare(String(b.e)); });
+    }
+    function listaEquipos(eqs) {
+        const ks = Object.keys(eqs).sort(function (a, b) { return eqs[b] - eqs[a]; });
+        const max = 4;
+        let s = ks.slice(0, max).map(function (k) { return esc(k) + ' ' + fmtN(eqs[k]); }).join(' &middot; ');
+        if (ks.length > max) s += ' &middot; y ' + (ks.length - max) + ' m&aacute;s';
+        return s;
+    }
+
+    function pintar() {
+        const v = vista, det = filasDe(v);
+        const total = v.equipos.reduce(function (s, e) { return s + (Number(e.total) || 0); }, 0);
+        const porEj = {}, porEmp = {}, profs = {};
+        det.forEach(function (d) { porEj[d.j] = (porEj[d.j] || 0) + d.c; porEmp[d.e] = (porEmp[d.e] || 0) + d.c; if (d.p) profs[d.p] = 1; });
+        const ejs = Object.keys(porEj).sort(function (a, b) { return porEj[b] - porEj[a]; });
+        const emps = Object.keys(porEmp).sort(function (a, b) { return porEmp[b] - porEmp[a]; });
+        const topEmp = emps[0];
+        const pctTop = topEmp && total ? Math.round(porEmp[topEmp] * 100 / total) : 0;
+        const filas = det.filter(function (d) { return !filtro || d.j === filtro; });
+        const tot = filas.reduce(function (s, d) { return s + d.c; }, 0);
+        const verEquipos = v.tipo !== 'equipo';
+
+        // Selector: total general, cada laboratorio completo y cada equipo.
+        const labs = {}, totLab = {};
+        DATOS.equipos.forEach(function (e) { (labs[e.lab] = labs[e.lab] || []).push(e); totLab[e.lab] = (totLab[e.lab] || 0) + (Number(e.total) || 0); });
+        const totGeneral = DATOS.equipos.reduce(function (s, e) { return s + (Number(e.total) || 0); }, 0);
+        const opt = function (valor, texto, sel) { return '<option value="' + esc(valor) + '"' + (sel ? ' selected' : '') + '>' + texto + '</option>'; };
+        let opciones = opt(SEP, 'Todos los equipos previstos (' + fmtN(totGeneral) + ')', v.tipo === 'todos');
+        opciones += Object.keys(labs).map(function (l) {
+            return '<optgroup label="' + esc(l) + '">'
+                + opt(l + SEP, 'Todo el laboratorio (' + fmtN(totLab[l]) + ')', v.tipo === 'lab' && v.lab === l)
+                + labs[l].map(function (e) { return opt(e.lab + SEP + e.nombre, esc(e.nombre) + ' (' + fmtN(e.total) + ')', v.tipo === 'equipo' && v.equipos[0] === e); }).join('')
+                + '</optgroup>';
+        }).join('');
+
+        let h = '<div class="cab"><div class="ic"><i class="fas ' + (v.tipo === 'equipo' ? 'fa-dolly' : (v.tipo === 'lab' ? 'fa-flask' : 'fa-layer-group')) + '"></i></div><div>'
+            + '<h1>' + esc(v.titulo) + '</h1>'
+            + '<div class="sub">' + v.sub + ' &middot; Equipos previstos de ingreso (proformas aceptadas sin Orden de Trabajo) &middot; Reporte del ' + fecha(DATOS.report_date) + '</div>'
+            + '</div></div>';
+        h += '<div class="barra"><label for="sel">Ver:</label><select id="sel" onchange="elegir(this.value)">' + opciones + '</select>'
+            + '<button type="button" class="btn" onclick="window.print()" title="Imprimir o guardar como PDF"><i class="fas fa-print"></i> Imprimir / PDF</button></div>';
+        h += '<div class="kpis">'
+            + '<div class="kpi"><div class="v">' + fmtN(total) + '</div><div class="l">equipos previstos</div></div>'
+            + '<div class="kpi"><div class="v">' + fmtN(emps.length) + '</div><div class="l">empresas</div></div>'
+            + '<div class="kpi"><div class="v">' + fmtN(Object.keys(profs).length) + '</div><div class="l">proformas</div></div>'
+            + '<div class="kpi"><div class="v">' + (verEquipos ? fmtN(v.equipos.length) : pctTop + '%') + '</div><div class="l">' + (verEquipos ? 'tipos de equipo' : 'de la empresa principal') + '</div></div>'
+            + '</div>';
+        if (topEmp && pctTop >= 50 && emps.length > 1) {
+            h += '<div class="aviso"><i class="fas fa-circle-info"></i> <b>' + fmtN(porEmp[topEmp]) + ' de los ' + fmtN(total) + '</b> (' + pctTop + '%) son de <b>' + esc(topEmp) + '</b>. El resto se reparte entre ' + fmtN(emps.length - 1) + ' empresa(s).</div>';
+        }
+        h += '<div class="tarjeta">';
+        if (v.tipo === 'todos' && Object.keys(labs).length > 1) {
+            h += '<div class="chips nav-labs"><span class="et">Abrir un laboratorio:</span>'
+                + Object.keys(labs).sort(function (a, b) { return totLab[b] - totLab[a]; }).map(function (l) {
+                    return '<button type="button" class="chip nav" data-v="' + esc(l + SEP) + '" onclick="elegir(this.dataset.v)">' + esc(l.replace(/^Laboratorio de /i, '')) + ' <b>' + fmtN(totLab[l]) + '</b> <i class="fas fa-chevron-right"></i></button>';
+                }).join('') + '</div>';
+        }
+        h += '<div class="chips"><span class="et">Por ejecutivo comercial' + (ejs.length > 1 ? ' (toca uno para filtrar)' : '') + ':</span>'
+            + ejs.map(function (j) {
+                const pct = total ? Math.round(porEj[j] * 100 / total) : 0;
+                return '<button type="button" class="chip' + (filtro === j ? ' activo' : '') + '" data-j="' + esc(j) + '" onclick="porEjecutivo(this.dataset.j)">' + esc(j) + ' <b>' + fmtN(porEj[j]) + '</b> <span>' + pct + '%</span></button>';
+            }).join('') + '</div>';
+        h += '<div class="tabla"><table><thead><tr><th>Empresa' + (verEquipos ? ' / equipos' : '') + '</th><th>Proforma</th><th class="col-fecha">Aceptada</th><th>Ejecutivo comercial</th><th class="n">Equipos</th></tr></thead><tbody>'
+            + filas.map(function (d) {
+                return '<tr><td class="emp">' + esc(d.e) + (verEquipos ? '<small>' + listaEquipos(d.eqs) + '</small>' : '') + '</td>'
+                    + '<td>' + (d.p ? esc(d.p) : '&mdash;') + '</td><td class="col-fecha">' + fecha(d.f) + '</td><td>' + esc(d.j) + '</td><td class="n"><b>' + fmtN(d.c) + '</b></td></tr>';
+            }).join('')
+            + '</tbody><tfoot><tr><td colspan="2">' + (filtro ? 'Total de ' + esc(filtro) : 'Total') + '</td><td class="col-fecha"></td><td></td><td class="n">' + fmtN(tot) + '</td></tr></tfoot></table></div></div>';
+        h += '<p class="pie">Metrolog&iacute;a &amp; Servicios &middot; Datos al ' + fecha(DATOS.report_date) + '. La cifra cambia a diario: sube con cada proforma aceptada y baja cuando el equipo ingresa y recibe su OT.</p>';
+        document.getElementById('app').innerHTML = h;
+        document.title = v.titulo + ' - Desglose de previstos';
+    }
+
+    async function cargar() {
+        if (!/^[A-Za-z0-9_-]{16,64}$/.test(token)) return estado('Link de desglose inv&aacute;lido. &Aacute;brelo desde el Reporte Ejecutivo de KPIs.');
+        const url = SUPABASE_URL + '/storage/v1/object/public/' + SUPABASE_BUCKET + '/' + encodeURIComponent(token + '_previstos') + '.json';
+        try {
+            let resp = await fetch(url);
+            if (!resp.ok) {
+                const r2 = await fetch(url.replace(SUPABASE_URL, SUPABASE_URL_ANTERIOR)).catch(function () { return null; });
+                if (r2 && r2.ok) resp = r2;
+            }
+            if (!resp.ok) return estado(resp.status === 404 || resp.status === 400
+                ? 'Este reporte no tiene desglose de equipos previstos (se gener&oacute; antes de esta funci&oacute;n).'
+                : 'No se pudo cargar el desglose (error de red).');
+            const snap = await resp.json();
+            DATOS = snap.data || snap;
+            if (!DATOS || !DATOS.equipos || !DATOS.equipos.length) return estado('Sin equipos previstos en este reporte.');
+            elegir((params.get('lab') || '') + SEP + (params.get('equipo') || ''));
+        } catch (e) {
+            console.error(e);
+            estado('Ocurri&oacute; un error cargando el desglose. Verifica tu conexi&oacute;n a internet.');
+        }
+    }
+    cargar();
+</script>
+</body>
+</html>

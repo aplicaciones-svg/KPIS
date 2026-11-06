@@ -355,6 +355,10 @@
         margin-bottom: 6px;
         border-bottom: 1px solid var(--borde);
     }
+    a.num-detalle { color: inherit; text-decoration: underline; text-decoration-color: #a5b4fc; text-underline-offset: 3px; cursor: pointer; border-radius: 4px; }
+    a.num-detalle:hover, a.num-detalle:focus-visible { color: #4338ca; background: #eef4ff; outline: none; }
+    td a.num-detalle { display: block; text-decoration: none; }
+    td a.num-detalle .n { text-decoration: underline; text-decoration-color: #a5b4fc; text-underline-offset: 3px; color: #4338ca; }
     .detalle-lab-header .total {
         color: #4338ca;
         font-weight: 800;
@@ -384,6 +388,16 @@
     .detalle-lab-lista li.otros .nombre {
         font-style: italic;
     }
+    /* Equipos con desglose: la cantidad abre previstos.html en otra pestana */
+    .detalle-lab-lista li a.con-detalle { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; width: 100%; color: inherit; text-decoration: none; border-radius: 6px; margin: 0 -6px; padding: 0 6px; }
+    .detalle-lab-lista li a.con-detalle:hover, .detalle-lab-lista li a.con-detalle:focus-visible { background: var(--azul-claro); outline: none; }
+    .detalle-lab-lista li a.con-detalle:hover .nombre { color: var(--azul); }
+    .detalle-lab-lista li a.con-detalle .cant { color: var(--azul); text-decoration: underline; text-underline-offset: 2px; }
+    .detalle-lab-lista li a.con-detalle .cant i { font-size: .55rem; color: #94a3b8; margin-left: 3px; }
+    .detalle-lab-lista li.desplegable { cursor: pointer; }
+    .detalle-lab-lista li.otros.abierto .cant i { transform: rotate(180deg); }
+    .detalle-lab-lista li.otros-lista { display: block; padding: 0 0 0 8px; border-left: 2px solid var(--borde); margin: 2px 0 4px; }
+    .detalle-lab-lista li.otros-lista[hidden] { display: none; }
     .nota {
         font-size: 0.7rem;
         font-style: italic;
@@ -732,35 +746,55 @@
 
         function renderEquiposPrevistos(ep) {
             if (!ep || !ep.rows || ep.rows.length === 0) return '';
+            // El desglose (empresa / proforma / ejecutivo) vive en un archivo aparte y se abre en previstos.html.
+            // Cualquier cifra agrupada de la seccion (total, laboratorio, equipo) abre su desglose.
+            const token = new URLSearchParams(window.location.search).get('token') || '';
+            const conLink = !ep.sin_desglose && token;
+            const hayDetalle = conLink && ep.rows.some(function (r) { return (r.items || []).concat(r.otros_items || []).some(function (it) { return it.d; }); });
+            const urlPrev = function (lab, equipo) {
+                return 'previstos.html?token=' + encodeURIComponent(token) + (lab ? '&lab=' + encodeURIComponent(lab) : '') + (equipo ? '&equipo=' + encodeURIComponent(equipo) : '');
+            };
+            const numLink = function (contenido, lab, titulo) {
+                if (!hayDetalle) return contenido;
+                return '<a class="num-detalle" href="' + urlPrev(lab, '') + '" target="_blank" rel="noopener" title="Abrir el desglose de ' + esc(titulo) + '">' + contenido + '</a>';
+            };
             let html = '<div class="seccion-titulo" style="color:#312e81;"><i class="fas fa-dolly"></i> 7. Equipos previstos de ingreso</div>';
             html += '<p class="nota" style="margin-bottom:10px;">Proformas aceptadas con instrumento sin Orden de Trabajo. Ordenado de mayor a menor por laboratorio.</p>';
             html += '<div class="summary-cards">';
-            html += '<div class="mini"><div class="l">Equipos previstos</div><div class="v">' + fmtN(ep.total) + '</div></div>';
+            html += '<div class="mini"><div class="l">Equipos previstos</div><div class="v">' + numLink(fmtN(ep.total), '', 'todos los equipos previstos') + '</div></div>';
             html += '<div class="mini"><div class="l">Laboratorios</div><div class="v">' + fmtN(ep.laboratorios) + '</div></div>';
             html += '<div class="mini"><div class="l">Proformas / grupos</div><div class="v">' + fmtN(ep.grupos) + '</div></div>';
             html += '</div>';
+            if (hayDetalle) html += '<p class="nota" style="margin:-4px 0 8px;"><i class="fas fa-hand-pointer"></i> Toca cualquier cantidad (total, laboratorio o equipo) para abrir su desglose por empresa y ejecutivo comercial.</p>';
 
             // --- Resumen totalizado por laboratorio (vista rapida) ---
             html += '<p class="subseccion"><i class="fas fa-list-ol"></i> Resumen por laboratorio</p>';
             const maxTotal = Math.max.apply(null, ep.rows.map(function (r) { return r.total || 0; }));
             const resumenRows = ep.rows.map(function (r) {
-                return { cells: [esc(r.laboratorio), celdaTotal(r.total, maxTotal, '#4338ca')] };
+                return { cells: [esc(r.laboratorio), numLink(celdaTotal(r.total, maxTotal, '#4338ca'), r.laboratorio, r.laboratorio)] };
             });
-            resumenRows.push({ _cls: 'total', cells: ['TOTAL GENERAL', fmtN(ep.total)] });
+            resumenRows.push({ _cls: 'total', cells: ['TOTAL GENERAL', numLink(fmtN(ep.total), '', 'todos los equipos previstos')] });
             html += tabla(['Laboratorio', 'Total de equipos'], resumenRows, '#312e81');
 
             // --- Detalle por laboratorio: lista ordenada (equipo | cantidad), no texto corrido ---
             html += '<p class="subseccion"><i class="fas fa-list"></i> Detalle por laboratorio</p>';
             html += '<div class="detalle-labs-grid">';
+            const liEquipo = function (it, lab) {
+                if (!(it.d && conLink)) return '<li><span class="nombre">' + esc(it.nombre) + '</span><span class="cant">' + fmtN(it.cantidad) + '</span></li>';
+                const url = urlPrev(lab, it.nombre);
+                return '<li><a class="con-detalle" href="' + url + '" target="_blank" rel="noopener" title="Abrir el desglose de ' + esc(it.nombre) + '">'
+                    + '<span class="nombre">' + esc(it.nombre) + '</span><span class="cant">' + fmtN(it.cantidad) + ' <i class="fas fa-arrow-up-right-from-square"></i></span></a></li>';
+            };
             ep.rows.forEach(function (r) {
                 html += '<div class="detalle-lab-card">';
-                html += '<div class="detalle-lab-header"><span>' + esc(r.laboratorio) + '</span><span class="total">' + fmtN(r.total) + '</span></div>';
+                html += '<div class="detalle-lab-header"><span>' + esc(r.laboratorio) + '</span><span class="total">' + numLink(fmtN(r.total), r.laboratorio, r.laboratorio) + '</span></div>';
                 if (r.items && r.items.length > 0) {
                     html += '<ul class="detalle-lab-lista">';
-                    r.items.forEach(function (it) {
-                        html += '<li><span class="nombre">' + esc(it.nombre) + '</span><span class="cant">' + fmtN(it.cantidad) + '</span></li>';
-                    });
-                    if (r.otros_count) {
+                    r.items.forEach(function (it) { html += liEquipo(it, r.laboratorio); });
+                    if (r.otros_count && r.otros_items && r.otros_items.length) {
+                        html += '<li class="otros desplegable" role="button" tabindex="0" onclick="this.nextElementSibling.hidden=!this.nextElementSibling.hidden;this.classList.toggle(\'abierto\')" title="Ver los dem&aacute;s equipos"><span class="nombre">+ ' + fmtN(r.otros_count) + ' equipo(s) m&aacute;s</span><span class="cant">' + fmtN(r.otros_total) + ' <i class="fas fa-chevron-down"></i></span></li>';
+                        html += '<li class="otros-lista" hidden><ul class="detalle-lab-lista">' + r.otros_items.map(function (it) { return liEquipo(it, r.laboratorio); }).join('') + '</ul></li>';
+                    } else if (r.otros_count) {
                         html += '<li class="otros"><span class="nombre">+ ' + fmtN(r.otros_count) + ' equipo(s) m&aacute;s</span><span class="cant">' + fmtN(r.otros_total) + '</span></li>';
                     }
                     html += '</ul>';
